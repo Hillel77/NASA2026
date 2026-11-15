@@ -1,3 +1,6 @@
+פתרון זה פותח במסגרת NASA Space Apps Tel Aviv 2026. האירוע הובל על ידי המרכז להנדסת חלל (SEC) ו-SpaceTAU באוניברסיטת תל אביב, בשיתוף משימת רקיע וקהילת Space Campus IL.
+
+
 # TerraNova — Earth analog sites for lunar & Martian testing
 
 **NASA Space Apps Challenge 2026 · Permanent Moon Base Locations and Mars**
