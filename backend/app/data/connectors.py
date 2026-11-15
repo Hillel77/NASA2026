@@ -57,6 +57,34 @@ def nasa_power_point(lat: float, lon: float) -> dict:
     return _cached(f"power:{lat:.3f}:{lon:.3f}", go)
 
 
+def nasa_power_climatology(lat: float, lon: float, params: list[str]) -> dict:
+    """NASA POWER climatology API (official NASA service) for verification. Asks for the
+    2001-2020 period used by TerraNova; if the service rejects the period arguments, retries
+    with its default period and reports which one was used."""
+    url = "https://power.larc.nasa.gov/api/temporal/climatology/point"
+    base = {"parameters": ",".join(params), "community": "RE", "latitude": round(lat, 4),
+            "longitude": round(lon, 4), "format": "JSON"}
+
+    def go():
+        last = None
+        for extra in ({"start": 2001, "end": 2020}, {}):
+            try:
+                r = requests.get(url, params={**base, **extra}, timeout=TIMEOUT, headers=UA)
+                if r.status_code in (400, 422) and extra:
+                    last = f"HTTP {r.status_code} with start/end; retried with default period"
+                    continue
+                r.raise_for_status()
+                j = r.json()
+                return {"available": True, "source": "NASA POWER API (climatology/point)", "url": r.url,
+                        "parameters": j.get("properties", {}).get("parameter", {}),
+                        "units": {k: v.get("units") for k, v in j.get("parameters", {}).items()},
+                        "header": j.get("header", {}), "period_note": last}
+            except Exception as e:  # noqa: BLE001
+                return {"available": False, "source": "NASA POWER API", "error": f"{type(e).__name__}: {e}"[:300]}
+        return {"available": False, "source": "NASA POWER API", "error": last or "no response"}
+    return _cached(f"powerclim:{lat:.3f}:{lon:.3f}:{','.join(params)}", go)
+
+
 def soilgrids_point(lat: float, lon: float) -> dict:
     """ISRIC SoilGrids 2.0 REST: sand/silt/clay %, bulk density, organic carbon, 0-5 cm."""
     url = "https://rest.isric.org/soilgrids/v2.0/properties/query"

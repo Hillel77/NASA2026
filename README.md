@@ -72,6 +72,17 @@ You can also rebuild only some stages: `python backend/scripts/build_grid.py pow
 | **Location analysis** | Comparison table (target · Earth · difference · similarity · reproducibility · source · data-quality badges); an explanation built from the measured values; category scores; climate charts (monthly temperature, diurnal range, solar irradiation vs. TOA, daylight, precipitation, wind) against target values; terrain slope distribution (Earth 2.4 km, Earth 150 m live, target); a live elevation histogram (AWS Terrain Tiles z10); live NASA POWER and ISRIC SoilGrids lookups; sources and limitations. |
 | **Export** | Ranked list as CSV · locations as GeoJSON · configuration as JSON · per-location PDF report. |
 
+### Research assistance features
+
+| Feature | Where | How it works |
+|---|---|---|
+| **Research advisor** (post-research advice & input filtering) | Right panel → *Advisor* tab, offered as soon as an analysis finishes | `backend/app/advisor.py` reviews every parameter the user entered: weight share, data coverage, data quality, reproducibility, how much it separates candidate sites, how well the top sites match it, and whether removing it changes the #1 site (leave-one-out). Each gets a verdict (*Relevant / Needs review / Reduce weight / Lab only / Not relevant / Consider adding*) with the numeric reason and one-click actions (disable, halve weight, enable). Constraints are reviewed too: share of land each one removes. Practical advice for conducting the study is generated from the same numbers. |
+| **Experiment search** | Location window → *Overview* | `frontend/src/components/ExperimentSearch.tsx`: an in-browser BM25 search engine over everything known about the location (comparison rows, parameter definitions, explanation, execution plan, NASA verification, limitations, data-derived FAQ). Works offline. With Claude configured, *Ask AI* answers the same question from TerraNova's data. |
+| **Experiment execution & climate readjustment** | Location window → *Execution* | `backend/app/execution.py`: climate match per month from NASA POWER monthly climatology, best 3-month testing window, gaps with concrete mitigations, step-by-step execution plan, and machine-applicable readjustments (score climate for a test season, widen tolerances that no Earth site can meet, disable lab-only conditions). A season picker and climate weight/tolerance editor re-run the whole analysis. |
+| **NASA data verification** | Location window → *NASA verification*; automatic for the top 3 sites (badge on each result card) | `backend/app/verify.py`: compares the climate values used for scoring with NASA's official POWER records for the same grid cell, first through the **NASA POWER API** (power.larc.nasa.gov), then through **NASA POWER Analysis-Ready Data on AWS** (s3://nasa-power), with explicit tolerances per variable (temperature, irradiance, clearness index, wind, precipitation, humidity, pressure, 12 monthly temperatures). |
+| **PDF report** | Location window → *PDF report* | `frontend/src/lib/pdfReport.ts` (jsPDF + jspdf-autotable): cover band with score badge, key-figure cards, summary, category bars, drawn monthly temperature chart, comparison table grouped by category with similarity bars, execution plan, NASA verification table, sources, method, limitations, running header and page numbers. |
+| **Languages** | Header → language menu | `frontend/src/i18n/`: English, עברית (right-to-left), Español, Français for the whole interface (330 strings, generated from `frontend/scripts/translations.py`). Scientific content produced by the backend (parameter descriptions, explanations, citations) stays in English so units and terminology stay exact; the PDF is English because the built-in PDF fonts are Latin-only. Claude answers in the selected language. |
+
 ---
 
 ## 3. Scientific method
@@ -177,7 +188,7 @@ docker build -t terranova . && docker run -p 7860:7860 terranova
 
 ## 8. Configuration / API keys
 
-No API keys are required.
+No API keys are required. Claude-powered text (research brief, *Ask AI*) is optional.
 
 | Variable | Where | Purpose |
 |---|---|---|
@@ -186,6 +197,9 @@ No API keys are required.
 | `TERRANOVA_DEMO=1` | backend | Force the synthetic demo grid. |
 | `TERRANOVA_HTTP_TIMEOUT` | backend | Timeout for live connectors (s, default 12). |
 | `PORT` | `run.sh` | Server port (default 8000). |
+| `ANTHROPIC_API_KEY` | backend | Optional. Enables the Claude-written research brief and *Ask AI* (model `claude-opus-5-5`). Without it, all advisor, execution and search features still work from computed data. |
+| `TERRANOVA_CLAUDE_MODEL` | backend | Optional override of the Claude model. |
+| `TERRANOVA_DISABLE_LLM=1` | backend | Turn the Claude features off even if a key is present. |
 
 ## 9. Architecture
 
