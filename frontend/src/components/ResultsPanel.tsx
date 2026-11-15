@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ArrowUpDown, Award, BadgeCheck, Columns3, Filter, Globe2, ListOrdered, MapPin, Target } from 'lucide-react';
 import type { AnalyzeResponse, TopLocation } from '../lib/api';
 import { api } from '../lib/api';
 import { fmtLat, fmtLon, scoreColor } from '../lib/format';
-import { Segmented, Spinner } from './ui';
+import { Meter, ScoreRing, Segmented, Skeleton, Spinner } from './ui';
 
 interface Props {
   result: AnalyzeResponse | null;
@@ -17,6 +18,7 @@ interface Props {
 }
 
 type SortKey = 'score' | 'confidence' | 'name';
+const FILTER_SELECT = 'tn-select rounded-md border border-ink-600 bg-ink-850 py-1 pl-2 text-2xs text-mute-100 focus:border-accent focus:outline-none';
 
 export default function ResultsPanel(p: Props) {
   const [tab, setTab] = useState<'ranking' | 'validation'>('ranking');
@@ -36,73 +38,66 @@ export default function ResultsPanel(p: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-ink-700 px-4 py-3">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-2xs uppercase tracking-[0.12em] text-mute-400">Best locations</div>
+      <div className="border-b border-ink-700/70 bg-ink-925 px-4 pb-3 pt-4">
+        <div className="mb-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-2xs font-medium uppercase tracking-[0.14em] text-mute-400"><Award size={12} />Best locations</div>
           {p.loading && <Spinner />}
         </div>
-        <Segmented value={tab} onChange={setTab} options={[{ value: 'ranking', label: 'Top 10 ranking' }, { value: 'validation', label: 'Known analog sites' }]} />
+        <Segmented value={tab} onChange={setTab} options={[
+          { value: 'ranking', label: 'Top 10 ranking', icon: ListOrdered },
+          { value: 'validation', label: 'Known analog sites', icon: BadgeCheck },
+        ]} />
       </div>
 
-      {p.error && <div className="m-3 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">Analysis failed: {p.error}</div>}
-      {r?.warnings.map((w, i) => <div key={i} className="mx-3 mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-2xs text-amber-200">{w}</div>)}
+      {p.error && (
+        <div className="m-3 flex gap-2 rounded-lg border border-red-500/40 bg-red-500/10 p-2.5 text-xs text-red-200">
+          <AlertTriangle size={14} className="mt-px shrink-0" />Analysis failed: {p.error}
+        </div>
+      )}
+      {r?.warnings.map((w, i) => (
+        <div key={i} className="mx-3 mt-2 flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-2xs leading-relaxed text-amber-200">
+          <AlertTriangle size={13} className="mt-px shrink-0" />{w}
+        </div>
+      ))}
 
       {tab === 'ranking' ? (
         <>
-          {r && <Stats r={r} />}
-          <div className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-4 py-2 text-2xs text-mute-400">
-            <label className="flex items-center gap-1">Sort
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="rounded border border-ink-600 bg-ink-850 px-1 py-0.5 text-mute-200">
+          {r ? <Stats r={r} /> : <div className="space-y-2 border-b border-ink-700/70 p-4"><Skeleton className="h-10" /><Skeleton className="h-8" /></div>}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700/70 bg-ink-925/60 px-4 py-2.5 text-2xs text-mute-400">
+            <label className="flex items-center gap-1.5"><ArrowUpDown size={11} />Sort
+              <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={FILTER_SELECT}>
                 <option value="score">Score</option><option value="confidence">Confidence</option><option value="name">Name</option>
               </select>
             </label>
-            <label className="flex items-center gap-1">Region
-              <select value={continent} onChange={(e) => setContinent(e.target.value)} className="max-w-[110px] rounded border border-ink-600 bg-ink-850 px-1 py-0.5 text-mute-200">
+            <label className="flex items-center gap-1.5"><Globe2 size={11} />Region
+              <select value={continent} onChange={(e) => setContinent(e.target.value)} className={`${FILTER_SELECT} max-w-[118px]`}>
                 <option value="all">All</option>{continents.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1">Conf ≥
-              <select value={minConf} onChange={(e) => setMinConf(Number(e.target.value))} className="rounded border border-ink-600 bg-ink-850 px-1 py-0.5 text-mute-200">
+            <label className="flex items-center gap-1.5"><Filter size={11} />Conf ≥
+              <select value={minConf} onChange={(e) => setMinConf(Number(e.target.value))} className={FILTER_SELECT}>
                 {[0, 50, 70, 85].map((v) => <option key={v} value={v}>{v}%</option>)}
               </select>
             </label>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {!r && !p.error && <div className="p-4 text-xs text-mute-400">Computing…</div>}
-            {r && list.length === 0 && <div className="p-4 text-xs text-mute-400">No location satisfies the current constraints and filters.</div>}
-            {list.map((t) => {
-              const inCmp = p.compare.some((c) => c.cell === t.cell);
-              const sel = p.selectedCell === t.cell;
-              return (
-                <div key={t.cell} onClick={() => p.onSelect(t)}
-                  className={`cursor-pointer border-b border-ink-800 px-4 py-2.5 transition-colors ${sel ? 'bg-accent/10' : 'hover:bg-ink-850'}`}>
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 w-5 shrink-0 font-mono text-xs text-mute-400">{t.rank}</div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate text-sm text-white" title={t.name}>{t.name}</div>
-                        <div className="shrink-0 font-mono text-sm font-medium tabular" style={{ color: scoreColor(t.score) }}>{t.score.toFixed(1)}</div>
-                      </div>
-                      <div className="flex items-center justify-between text-2xs text-mute-400">
-                        <span className="truncate">{t.country} · <span className="font-mono">{fmtLat(t.lat)} {fmtLon(t.lon)}</span></span>
-                        <span className="shrink-0 font-mono">conf {t.confidence.toFixed(0)}%</span>
-                      </div>
-                      <div className="mt-1 h-1 overflow-hidden rounded bg-ink-700"><div className="h-full" style={{ width: `${t.score}%`, background: scoreColor(t.score) }} /></div>
-                      <p className="mt-1 text-2xs leading-snug text-mute-400">{t.summary}</p>
-                      {t.flagged && <p className="mt-0.5 text-2xs text-amber-300">⚠ Violates: {t.failed_constraints.join(', ')}</p>}
-                      <label className="mt-1 flex items-center gap-1.5 text-2xs text-mute-400" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={inCmp} onChange={() => p.onToggleCompare(t)} className="accent-[#4fa3ff]" /> compare
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="flex-1 space-y-2 overflow-y-auto p-3">
+            {!r && !p.error && (
+              <>
+                <div className="px-1 text-xs text-mute-400">Computing…</div>
+                {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+              </>
+            )}
+            {r && list.length === 0 && (
+              <div className="rounded-xl border border-dashed border-ink-700 p-5 text-center text-xs text-mute-400">No location satisfies the current constraints and filters.</div>
+            )}
+            {list.map((t) => <ResultCard key={t.cell} t={t} selected={p.selectedCell === t.cell} inCmp={p.compare.some((c) => c.cell === t.cell)}
+              onSelect={() => p.onSelect(t)} onToggleCompare={() => p.onToggleCompare(t)} />)}
           </div>
           {p.compare.length > 0 && (
-            <div className="border-t border-ink-700 p-3">
+            <div className="border-t border-ink-700 bg-ink-925 p-3">
               <button onClick={p.onOpenCompare} disabled={p.compare.length < 2}
-                className="w-full rounded bg-accent/90 py-1.5 text-xs font-medium text-ink-950 hover:bg-accent disabled:bg-ink-600 disabled:text-mute-400">
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-xs font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:bg-ink-700 disabled:text-mute-400">
+                <Columns3 size={14} />
                 Compare {p.compare.length} location{p.compare.length > 1 ? 's' : ''} side by side{p.compare.length < 2 ? ' (select ≥2)' : ''}
               </button>
             </div>
@@ -115,22 +110,63 @@ export default function ResultsPanel(p: Props) {
   );
 }
 
+function ResultCard({ t, selected, inCmp, onSelect, onToggleCompare }: {
+  t: TopLocation; selected: boolean; inCmp: boolean; onSelect: () => void; onToggleCompare: () => void;
+}) {
+  return (
+    <div onClick={onSelect} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onSelect(); }}
+      className={`group cursor-pointer rounded-xl border p-3 transition-all ${selected ? 'border-accent/60 bg-accent/[0.07] shadow-[0_0_0_1px_rgba(79,163,255,0.2)]' : 'border-ink-700 bg-ink-875 hover:border-ink-500 hover:bg-ink-850'}`}>
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col items-center gap-1">
+          <span className={`grid h-6 w-6 place-items-center rounded-full font-mono text-2xs font-semibold ${t.rank <= 3 ? 'bg-accent/15 text-accent' : 'bg-ink-750 text-mute-300'}`}>{t.rank}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold leading-tight text-white" title={t.name}>{t.name}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-mute-400">
+            <span className="flex items-center gap-1"><MapPin size={10} />{t.country}</span>
+            <span className="font-mono text-mute-500">{fmtLat(t.lat)} {fmtLon(t.lon)}</span>
+          </div>
+        </div>
+        <ScoreRing value={t.score} size={42} label={<span style={{ color: scoreColor(t.score) }}>{t.score.toFixed(1)}</span>} />
+      </div>
+      <div className="mt-2.5 flex items-center gap-2 text-2xs text-mute-400">
+        <span className="w-16 shrink-0">conf {t.confidence.toFixed(0)}%</span>
+        <Meter value={t.confidence} color="#5b9bd5" className="flex-1" />
+      </div>
+      <p className="mt-2 text-2xs leading-relaxed text-mute-300">{t.summary}</p>
+      {t.flagged && (
+        <p className="mt-1.5 flex gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-2xs text-amber-300"><AlertTriangle size={11} className="mt-px shrink-0" />Violates: {t.failed_constraints.join(', ')}</p>
+      )}
+      <label className={`mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-2xs transition-colors ${inCmp ? 'bg-accent/10 text-accent' : 'text-mute-400 hover:text-mute-200'}`} onClick={(e) => e.stopPropagation()}>
+        <input type="checkbox" checked={inCmp} onChange={onToggleCompare} className="accent-[#4fa3ff]" /> compare
+      </label>
+    </div>
+  );
+}
+
 function Stats({ r }: { r: AnalyzeResponse }) {
   const max = Math.max(...r.stats.score_hist, 1);
   return (
-    <div className="border-b border-ink-700 px-4 py-2.5">
-      <div className="grid grid-cols-3 gap-2 text-center">
-        {[['Eligible cells', r.stats.ok.toLocaleString()], ['Excluded / flagged', (r.stats.excluded + r.stats.flagged).toLocaleString()], ['No data', r.stats.no_data.toLocaleString()]].map(([k, v]) => (
-          <div key={k}><div className="font-mono text-sm text-white tabular">{v}</div><div className="text-2xs text-mute-400">{k}</div></div>
+    <div className="border-b border-ink-700/70 px-4 py-3">
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          ['Eligible cells', r.stats.ok.toLocaleString(), 'text-emerald-300'],
+          ['Excluded / flagged', (r.stats.excluded + r.stats.flagged).toLocaleString(), 'text-amber-300'],
+          ['No data', r.stats.no_data.toLocaleString(), 'text-mute-300'],
+        ].map(([k, v, c]) => (
+          <div key={k} className="rounded-lg border border-ink-700 bg-ink-875 px-2 py-2 text-center">
+            <div className={`font-mono text-sm font-medium tabular ${c}`}>{v}</div>
+            <div className="mt-0.5 text-2xs leading-tight text-mute-400">{k}</div>
+          </div>
         ))}
       </div>
-      <div className="mt-2 flex h-8 items-end gap-0.5" title="Distribution of scores across eligible land cells (0–100)">
+      <div className="mt-3 flex h-9 items-end gap-[3px]" title="Distribution of scores across eligible land cells (0–100)">
         {r.stats.score_hist.map((c, i) => (
-          <div key={i} className="flex-1 rounded-t-sm" style={{ height: `${Math.max(2, (c / max) * 100)}%`, background: scoreColor(i * 10 + 5), opacity: 0.85 }}
+          <div key={i} className="flex-1 rounded-t-[3px]" style={{ height: `${Math.max(3, (c / max) * 100)}%`, background: scoreColor(i * 10 + 5), opacity: 0.9 }}
             title={`${i * 10}–${i * 10 + 10}: ${c.toLocaleString()} cells`} />
         ))}
       </div>
-      <div className="mt-0.5 flex justify-between font-mono text-2xs text-mute-400"><span>0</span><span>score distribution · {r.elapsed_ms} ms</span><span>100</span></div>
+      <div className="mt-1 flex justify-between font-mono text-2xs text-mute-500"><span>0</span><span>score distribution · {r.elapsed_ms} ms</span><span>100</span></div>
     </div>
   );
 }
@@ -144,27 +180,32 @@ function Validation({ rid, onPick }: { rid: string | null; onPick: (lat: number,
     api.validation(rid).then((v) => setSites(v.sites)).catch((e) => setErr(String(e.message ?? e)));
   }, [rid]);
   if (err) return <div className="p-4 text-xs text-red-300">{err}</div>;
-  if (!sites) return <div className="p-4 text-xs text-mute-400">Loading…</div>;
+  if (!sites) return <div className="space-y-2 p-3"><div className="px-1 text-xs text-mute-400">Loading…</div>{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12" />)}</div>;
   const sorted = [...sites].sort((a, b) => Number(b.same_body) - Number(a.same_body) || (b.percentile ?? -1) - (a.percentile ?? -1));
   return (
     <div className="flex-1 overflow-y-auto">
-      <p className="px-4 py-2 text-2xs leading-relaxed text-mute-400">
-        Sanity check: where do analog sites actually used by NASA/ESA fall in the current score distribution? Percentile = share of all land cells scoring lower. These sites are never used as inputs.
-      </p>
-      {sorted.map((s) => (
-        <button key={s.name} onClick={() => onPick(s.lat, s.lon)} className="block w-full border-b border-ink-800 px-4 py-2 text-left hover:bg-ink-850">
-          <div className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2 truncate text-xs text-white">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${s.body === 'mars' ? 'bg-mars' : 'bg-moon'}`} />{s.name}
-            </span>
-            <span className="shrink-0 font-mono text-xs" style={{ color: scoreColor(s.score) }}>{s.score ?? '—'}</span>
-          </div>
-          <div className="flex justify-between text-2xs text-mute-400">
-            <span className="truncate">{s.use}</span>
-            <span className="shrink-0 font-mono">{s.percentile !== null ? `P${s.percentile.toFixed(0)}` : 'n/a'}</span>
-          </div>
-        </button>
-      ))}
+      <div className="m-3 flex gap-2 rounded-lg border border-ink-700 bg-ink-875 p-3 text-2xs leading-relaxed text-mute-400">
+        <Target size={13} className="mt-px shrink-0 text-accent" />
+        <span>Sanity check: where do analog sites actually used by NASA/ESA fall in the current score distribution? Percentile = share of all land cells scoring lower. These sites are never used as inputs.</span>
+      </div>
+      <div className="space-y-1.5 px-3 pb-3">
+        {sorted.map((s) => (
+          <button key={s.name} onClick={() => onPick(s.lat, s.lon)}
+            className="block w-full rounded-lg border border-ink-700 bg-ink-875 px-3 py-2 text-left transition-colors hover:border-ink-500 hover:bg-ink-850">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-white">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${s.body === 'mars' ? 'bg-mars' : 'bg-moon'}`} />{s.name}
+              </span>
+              <span className="shrink-0 font-mono text-xs font-medium" style={{ color: scoreColor(s.score) }}>{s.score ?? '—'}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2 text-2xs text-mute-400">
+              <span className="truncate">{s.use}</span>
+              <span className="shrink-0 rounded bg-ink-750 px-1.5 font-mono text-mute-300">{s.percentile !== null ? `P${s.percentile.toFixed(0)}` : 'n/a'}</span>
+            </div>
+            {s.percentile !== null && <Meter value={s.percentile} color={scoreColor(s.score)} className="mt-1.5 h-1" />}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

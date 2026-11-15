@@ -297,12 +297,12 @@ export default function Globe(p: Props) {
           3D globe could not start (WebGL unavailable?): {failed}
         </div>
       )}
-      <div className="absolute right-3 bottom-24 flex flex-col gap-1 z-10">
-        {[['+', () => zoom(0.6)], ['−', () => zoom(1.7)]].map(([t, f]) => (
-          <button key={t as string} onClick={f as () => void} className="w-8 h-8 rounded bg-ink-900/85 border border-ink-600 text-mute-200 hover:border-accent text-base leading-none" aria-label={t === '+' ? 'Zoom in' : 'Zoom out'}>{t as string}</button>
+      <div className="absolute bottom-24 right-3 z-10 flex flex-col overflow-hidden rounded-xl border border-ink-600 bg-ink-900/90 shadow-float backdrop-blur">
+        {[['+', () => zoom(0.6)], ['−', () => zoom(1.7)]].map(([t, f], i) => (
+          <button key={t as string} onClick={f as () => void} className={`grid h-9 w-9 place-items-center text-lg leading-none text-mute-200 transition-colors hover:bg-ink-750 hover:text-white ${i ? 'border-t border-ink-700' : ''}`} aria-label={t === '+' ? 'Zoom in' : 'Zoom out'}>{t as string}</button>
         ))}
       </div>
-      <div className="absolute left-3 bottom-3 z-10 font-mono text-2xs text-mute-300 bg-ink-900/80 border border-ink-700 rounded px-2 py-1 pointer-events-none">
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 hidden rounded-lg border border-ink-700 bg-ink-900/85 px-2.5 py-1 font-mono text-2xs text-mute-300 backdrop-blur sm:block">
         {hover ? `${fmtLat(hover.lat)}  ${fmtLon(hover.lon)}` : 'Move cursor over globe'}
       </div>
     </div>
