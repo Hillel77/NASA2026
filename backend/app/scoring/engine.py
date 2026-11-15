@@ -38,6 +38,9 @@ from ..data.grid import LAT_C, LON_C, NLAT, NLON, Grid, get_grid
 from .parameters import CATEGORIES, PARAMS, add_derived_layers, similarity
 from .targets import REGIONS
 
+# Layers that have a NASA POWER monthly climatology and can be scored for a test season
+SEASONAL_LAYERS = {"TS", "TS_RANGE", "ALLSKY_SFC_SW_DWN", "PRECTOTCORR", "WS10M", "DAYLIGHT_FRAC_MIN", "DAYLIGHT_FRAC_MAX"}
+
 # Constraint bits
 C_SLOPE, C_SOLAR, C_DAILY, C_SEASONAL, C_AREA, C_RELIEF, C_ROAD, C_PROTECTED, C_ICE = (1 << i for i in range(9))
 CONSTRAINT_INFO = {
@@ -78,6 +81,7 @@ class Engine:
         self.land_idx = np.flatnonzero(self.g.land.ravel())
         self.slope_hist_flat = self.g.slope_hist.reshape(self.g.slope_hist.shape[0], -1)
         self._sim_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._season_cache: dict[tuple, dict] = {}
         self._results: OrderedDict[str, Result] = OrderedDict()
         self._lock = threading.Lock()
         lat2d = np.repeat(LAT_C[:, None], NLON, 1).ravel()
@@ -85,16 +89,63 @@ class Engine:
         self.lat_land = lat2d[self.land_idx]
         self.lon_land = lon2d[self.land_idx]
 
+    # ------------------------------------------------------------------ test-season layers
+    def layers_for(self, season: list[int] | None) -> dict[str, np.ndarray]:
+        """Earth layers for scoring. With a test season (list of months 1-12), the seasonal
+        climate layers are replaced by their mean over those months (NASA POWER monthly
+        climatology); every other layer is the annual one. See SEASONAL_LAYERS."""
+        if not season:
+            return self.g.layers
+        months = tuple(sorted({int(m) for m in season if 1 <= int(m) <= 12}))
+        if not months or len(months) == 12:
+            return self.g.layers
+        with self._lock:
+            if months in self._season_cache:
+                return self._season_cache[months]
+        L = dict(self.g.layers)
+        idx = [m - 1 for m in months]
+        land = self.g.land
+
+        def mon(name, fn=np.nanmean):
+            if name not in self.g.monthly:
+                return None
+            arr, ri, ci = self.g.monthly[name]
+            a = arr[idx].astype(np.float32)
+            a[a <= -998] = np.nan
+            with np.errstate(all="ignore"):
+                out = fn(a, 0)[np.ix_(ri, ci)].astype(np.float32)
+            out[~land] = np.nan
+            return out
+
+        t2m = mon("T2M")
+        if t2m is not None:
+            # Skin temperature for the season, modelled as seasonal 2 m air temperature plus the
+            # cell's annual skin-minus-air offset (POWER has no monthly TS in this build).
+            L["TS"] = t2m + (self.g.layers["TS"] - self.g.layers["T2M"])
+        for name in ("TS_RANGE", "ALLSKY_SFC_SW_DWN", "PRECTOTCORR", "WS10M"):
+            v = mon(name)
+            if v is not None:
+                L[name] = v
+        dh_min, dh_max = mon("DAY_HOURS", np.nanmin), mon("DAY_HOURS", np.nanmax)
+        if dh_min is not None:
+            L["DAYLIGHT_FRAC_MIN"] = np.clip(dh_min, 0, 24) / 24.0
+            L["DAYLIGHT_FRAC_MAX"] = np.clip(dh_max, 0, 24) / 24.0
+        with self._lock:
+            self._season_cache[months] = L
+        return L
+
     # ------------------------------------------------------------------ similarity cache
-    def param_similarity(self, key: str, region: str, tolerance: float | None, extra: dict | None):
+    def param_similarity(self, key: str, region: str, tolerance: float | None, extra: dict | None,
+                         season: list[int] | None = None):
         p = PARAMS[key]
         target = REGIONS[region]["values"].get(key)
-        ck = json.dumps([key, region, tolerance, extra or {}], sort_keys=True)
+        seas = sorted(season) if season and any(l in SEASONAL_LAYERS for l in p.layers) else None
+        ck = json.dumps([key, region, tolerance, extra or {}, seas], sort_keys=True)
         with self._lock:
             if ck in self._sim_cache:
                 self._sim_cache.move_to_end(ck)
                 return self._sim_cache[ck]
-        s = similarity(p, self.g.layers, self.slope_hist_flat, self.land_idx, target, tolerance, extra)
+        s = similarity(p, self.layers_for(seas), self.slope_hist_flat, self.land_idx, target, tolerance, extra)
         s = s.astype(np.float32)
         with self._lock:
             self._sim_cache[ck] = s
@@ -131,7 +182,7 @@ class Engine:
             if needs_target and reg["values"].get(key) is None:
                 not_app.append(key)                     # e.g. ice proximity for an ice-free target
                 continue
-            s = self.param_similarity(key, region, pc.get("tolerance"), pc.get("extra"))
+            s = self.param_similarity(key, region, pc.get("tolerance"), pc.get("extra"), cfg.get("season_months"))
             sims[key] = s
             active.append(key)
             weights[key] = w
@@ -155,7 +206,7 @@ class Engine:
             no_data |= ~(conf_l >= min_conf)
         status_l[no_data] = ST_NODATA
 
-        fails_l = self._constraints(cfg.get("constraints", {}), score_l, status_l)
+        fails_l = self._constraints(cfg.get("constraints", {}), score_l, status_l, cfg.get("season_months"))
         failing = (fails_l > 0) & (status_l == ST_OK)
         status_l[failing] = ST_EXCLUDED if cfg.get("constraint_mode", "exclude") == "exclude" else ST_FLAGGED
 
@@ -176,8 +227,8 @@ class Engine:
                 self._results.popitem(last=False)
         return res
 
-    def _constraints(self, c: dict, score_l: np.ndarray, status_l: np.ndarray) -> np.ndarray:
-        L = self.g.layers
+    def _constraints(self, c: dict, score_l: np.ndarray, status_l: np.ndarray, season=None) -> np.ndarray:
+        L = self.layers_for(season)
         li = self.land_idx
         f = np.zeros(len(li), np.uint16)
 

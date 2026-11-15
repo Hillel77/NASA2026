@@ -17,7 +17,8 @@ RUN useradd -m -u 1000 app
 WORKDIR /app
 # Runtime dependencies only (the preprocessing extras in requirements.txt are not needed to serve)
 RUN pip install --no-cache-dir "fastapi>=0.110" "uvicorn[standard]>=0.29" "numpy>=1.26" "scipy>=1.12" \
-    "pillow>=10" "requests>=2.31" "global-land-mask>=1.0"
+    "pillow>=10" "requests>=2.31" "global-land-mask>=1.0" "anthropic>=2.0" \
+    "xarray>=2024.1" "zarr>=3" "fsspec>=2024.2" "s3fs>=2024.2" "aiohttp>=3.9"
 COPY backend/ backend/
 COPY data/processed/ data/processed/
 COPY --from=web /web/dist frontend/dist

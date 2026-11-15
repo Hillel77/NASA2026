@@ -14,7 +14,10 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import render
+from . import llm, render
+from .advisor import advisor_report
+from .execution import execution_plan
+from .verify import verify_location
 from .data import connectors
 from .data.grid import NLAT, NLON, RES, get_grid
 from .scoring import analysis
@@ -82,6 +85,7 @@ class AnalyzeRequest(BaseModel):
     top_n: int = Field(10, ge=1, le=50)
     min_separation_km: float = Field(250, ge=0, le=5000)
     preset_name: Optional[str] = None
+    season_months: Optional[list[int]] = Field(None, description="Score climate parameters for these months only (1-12)")
 
 
 def _cfg(req: AnalyzeRequest) -> dict:
@@ -91,6 +95,10 @@ def _cfg(req: AnalyzeRequest) -> dict:
     d["params"] = {k: v for k, v in d["params"].items() if k in PARAMS}
     d.pop("top_n")
     d.pop("min_separation_km")
+    sm = d.get("season_months")
+    d["season_months"] = sorted({m for m in sm if 1 <= m <= 12}) if sm else None
+    if d["season_months"] and len(d["season_months"]) == 12:
+        d["season_months"] = None
     return d
 
 
@@ -125,6 +133,7 @@ def meta():
                          "source": SRC[v[5]]} for k, v in DATA_LAYERS.items()],
         "analog_sites": ANALOG_SITES,
         "power_meta": g.meta.get("power"),
+        "llm": llm.status(),
         "built": g.meta.get("manifest", {}).get("built_utc"),
     }
 
@@ -197,7 +206,8 @@ def layer(rid: str, layer: str = Query("overall")):
             pc = res.config["params"].get(key, {})
             vec = res.sims.get(key)
             if vec is None:
-                vec = eng.param_similarity(key, res.config["region"], pc.get("tolerance"), pc.get("extra"))
+                vec = eng.param_similarity(key, res.config["region"], pc.get("tolerance"), pc.get("extra"),
+                                           res.config.get("season_months"))
             vec = vec * 100
         else:
             cats = eng.category_scores(res)
@@ -254,6 +264,82 @@ def validation(rid: str):
                     "percentile": None if pct is None else round(pct, 1), "same_body": s["body"] == body,
                     "status": int(res.status[f])})
     return {"sites": out}
+
+
+def _res(rid: str):
+    eng = get_engine()
+    res = eng.result(rid)
+    if res is None:
+        raise HTTPException(404, "result expired – re-run analysis")
+    return eng, res
+
+
+@app.get("/api/advisor")
+def advisor(rid: str, top_n: int = 10, min_separation_km: float = 250):
+    """Post-research advice: parameter relevance review, constraint review, practical advice."""
+    eng, res = _res(rid)
+    top = analysis.rank(eng, res, top_n, min_separation_km, include_flagged=res.config.get("constraint_mode") == "flag")
+    best_window = execution_plan(eng, res, top[0]["lat"], top[0]["lon"])["best_window"] if top else None
+    return advisor_report(eng, res, top, best_window)
+
+
+@app.get("/api/execution")
+def execution(rid: str, lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180)):
+    """Experiment execution plan for one location, with machine-applicable climate readjustments."""
+    eng, res = _res(rid)
+    return execution_plan(eng, res, lat, lon)
+
+
+@app.get("/api/verify")
+def verify(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180)):
+    """Cross-check the climate values used for scoring against NASA's official POWER records."""
+    return verify_location(get_grid(), lat, lon)
+
+
+class AskRequest(BaseModel):
+    rid: str
+    question: str = Field(..., min_length=2, max_length=2000)
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    lang: str = "en"
+
+
+def _llm_context(eng, res, lat=None, lon=None) -> dict:
+    top = analysis.rank(eng, res, 5, 250, include_flagged=res.config.get("constraint_mode") == "flag")
+    ctx = {"reference": REGIONS[res.config["region"]]["name"], "mission": res.config.get("preset_name"),
+           "season_months": res.config.get("season_months"),
+           "enabled_parameters": {k: {"weight": w, "label": PARAMS[k].label} for k, w in res.weights.items()},
+           "constraints": res.config.get("constraints"), "top_sites": top}
+    if lat is not None and lon is not None:
+        d = analysis.location_detail(eng, res, lat, lon)
+        ctx["location"] = {k: d[k] for k in ("name", "country", "lat", "lon", "score", "confidence", "status",
+                                             "failed_constraints", "category_scores", "terrain", "landcover", "logistics")}
+        ctx["location"]["comparison"] = [{k: r[k] for k in ("label", "unit", "enabled", "weight", "earth", "similarity", "quality", "repro")}
+                                         | {"target": (r["target"] or {}).get("value") if r["target"] else None}
+                                         for r in d["rows"]]
+        ctx["execution"] = execution_plan(eng, res, lat, lon)
+        ctx["execution"].pop("monthly", None)
+    return ctx
+
+
+@app.post("/api/ask")
+def ask(req: AskRequest):
+    """Free-text question about the experiment, answered by Claude from TerraNova's data (if configured)."""
+    eng, res = _res(req.rid)
+    ctx = _llm_context(eng, res, req.lat, req.lon)
+    return llm.ask(f"Answer this question about the planned analog experiment: {req.question}", ctx, req.lang, max_tokens=4000)
+
+
+@app.get("/api/brief")
+def brief(rid: str, lang: str = "en"):
+    """Narrative research brief written by Claude from the advisor's computed diagnostics (if configured)."""
+    eng, res = _res(rid)
+    top = analysis.rank(eng, res, 10, 250, include_flagged=res.config.get("constraint_mode") == "flag")
+    best_window = execution_plan(eng, res, top[0]["lat"], top[0]["lon"])["best_window"] if top else None
+    ctx = _llm_context(eng, res) | {"advisor": advisor_report(eng, res, top, best_window)}
+    return llm.ask("Write a research brief for the team: (1) how to conduct this study in practice, (2) which of the "
+                   "user's inputs are relevant and which are not, with the reason from the data for each, and (3) the "
+                   "main risks. Use headings and bullet points; under 450 words.", ctx, lang)
 
 
 # ---------------------------------------------------------------- static frontend (production)

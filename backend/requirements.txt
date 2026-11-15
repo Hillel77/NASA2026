@@ -4,7 +4,9 @@ numpy>=1.26
 scipy>=1.12
 pillow>=10
 requests>=2.31
-# --- preprocessing only (scripts/build_grid.py) ---
+# Optional: Claude-written research brief and "Ask AI" (needs ANTHROPIC_API_KEY)
+anthropic>=2.0
+# --- preprocessing (scripts/build_grid.py) and NASA ARD verification fallback ---
 xarray>=2024.1
 zarr>=3
 fsspec>=2024.2

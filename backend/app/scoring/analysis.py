@@ -156,7 +156,7 @@ def location_detail(engine: Engine, res: Result, lat: float, lon: float) -> dict
     pos = engine.land_pos(flat)
     region = REGIONS[res.config["region"]]
     info = place_info(engine, flat)
-    L = g.layers
+    L = engine.layers_for(res.config.get("season_months"))
     rows = []
     for key, p in PARAMS.items():
         pc = res.config["params"].get(key, {})
@@ -171,7 +171,8 @@ def location_detail(engine: Engine, res: Result, lat: float, lon: float) -> dict
             v = res.sims[key][pos]
             s = None if not np.isfinite(v) else float(v)
         elif pos is not None and (tgt is not None or p.kind in ("pref", "binary_ok")):
-            v = engine.param_similarity(key, res.config["region"], pc.get("tolerance"), pc.get("extra"))[pos]
+            v = engine.param_similarity(key, res.config["region"], pc.get("tolerance"), pc.get("extra"),
+                                        res.config.get("season_months"))[pos]
             s = None if not np.isfinite(v) else float(v)
         diff = None
         if tgt is not None and p.kind in ("gaussian", "log_gaussian") and isinstance(earth, float):

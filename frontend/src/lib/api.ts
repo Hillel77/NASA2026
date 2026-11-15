@@ -24,6 +24,7 @@ export interface Meta {
   constraints: { bit: number; key: string; label: string; unit: string }[];
   constraint_colors: Record<string, number[]>;
   data_layers: DataLayer[]; analog_sites: AnalogSite[]; power_meta: any; built?: string;
+  llm: { available: boolean; model: string };
 }
 
 export interface ParamCfg { enabled: boolean; weight: number; tolerance?: number | null; extra?: Record<string, any> | null }
@@ -36,6 +37,7 @@ export interface AnalysisConfig {
   region: string; params: Record<string, ParamCfg>; constraints: Constraints;
   constraint_mode: 'exclude' | 'flag'; missing_mode: 'partial' | 'exclude'; min_confidence: number;
   top_n: number; min_separation_km: number; preset_name?: string | null;
+  season_months?: number[] | null;
 }
 
 export interface TopLocation {
@@ -78,6 +80,42 @@ async function j<T>(r: Response): Promise<T> {
   return r.json();
 }
 
+// ---------------------------------------------------------------- advisor / execution / verification
+export type Verdict = 'keep' | 'review' | 'reduce' | 'lab' | 'remove' | 'consider_adding';
+export interface ParamAdvice {
+  key: string; label: string; category: string; enabled: boolean; weight: number; weight_share: number;
+  quality: string; repro: string; verdict: Verdict; reasons: string[];
+  coverage_pct?: number | null; discrimination?: number | null; top_mean_similarity?: number | null;
+  best_earth_similarity?: number | null; correlation_with_score?: number | null; changes_top_site_if_removed?: boolean | null;
+}
+export interface ConstraintAdvice { key: string; label: string; value: any; unit: string; excluded_pct: number; only_reason_pct: number; verdict: string; advice: string }
+export interface AdviceItem { kind: string; title: string; detail: string }
+export interface AdvisorReport {
+  parameters: ParamAdvice[]; constraints: ConstraintAdvice[]; advice: AdviceItem[];
+  summary: { relevant: string[]; review: string[]; not_relevant: string[]; consider_adding: string[] };
+}
+export interface Adjustment {
+  type: 'season' | 'tolerance' | 'weight'; title: string; reason: string;
+  months?: number[] | null; param?: string; label?: string; from?: number; to?: number;
+}
+export interface ExecutionPlan {
+  lat: number; lon: number; target: string; source: string;
+  monthly: ({ month: string; index: number; score: number | null } & Record<string, any>)[];
+  monthly_params: { key: string; label: string }[];
+  best_window: { months: number[]; label: string; score: number; annual: number; params_used: string[] } | null;
+  gaps: { key: string; label: string; similarity: number; repro: string; mitigation: string }[];
+  steps: { phase: string; text: string }[];
+  adjustments: Adjustment[];
+  season_months: number[] | null;
+}
+export interface VerifyRow { variable: string; label: string; unit: string; terranova: number | null; nasa: number | null; difference?: number; tolerance?: number; status: 'match' | 'mismatch' | 'not_available'; months_compared?: number }
+export interface Verification {
+  status: 'verified' | 'discrepancies' | 'unavailable'; summary: string; rows: VerifyRow[];
+  source?: string; url?: string; checked_at?: string; note?: string; grid_cell?: { lat: number; lon: number };
+  sources_tried: { source: string; available: boolean; error?: string | null; url?: string | null; ms: number }[];
+}
+export interface LlmAnswer { available: boolean; text?: string; error?: string; model?: string }
+
 export const api = {
   meta: () => fetch('/api/meta').then((r) => j<Meta>(r)),
   analyze: (cfg: AnalysisConfig, signal?: AbortSignal) =>
@@ -88,6 +126,14 @@ export const api = {
     fetch(`/api/location?rid=${rid}&lat=${lat}&lon=${lon}`).then((r) => j<LocationDetail>(r)),
   live: (source: 'nasa_power' | 'soilgrids' | 'terrain', lat: number, lon: number) =>
     fetch(`/api/live?source=${source}&lat=${lat}&lon=${lon}`).then((r) => j<any>(r)),
+  advisor: (rid: string, topN: number, sep: number) =>
+    fetch(`/api/advisor?rid=${rid}&top_n=${topN}&min_separation_km=${sep}`).then((r) => j<AdvisorReport>(r)),
+  execution: (rid: string, lat: number, lon: number) => fetch(`/api/execution?rid=${rid}&lat=${lat}&lon=${lon}`).then((r) => j<ExecutionPlan>(r)),
+  verify: (lat: number, lon: number) => fetch(`/api/verify?lat=${lat}&lon=${lon}`).then((r) => j<Verification>(r)),
+  ask: (rid: string, question: string, lang: string, lat?: number, lon?: number) =>
+    fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rid, question, lang, lat, lon }) })
+      .then((r) => j<LlmAnswer>(r)),
+  brief: (rid: string, lang: string) => fetch(`/api/brief?rid=${rid}&lang=${lang}`).then((r) => j<LlmAnswer>(r)),
   validation: (rid: string) => fetch(`/api/validation?rid=${rid}`).then((r) => j<{ sites: any[] }>(r)),
 };
 
@@ -110,7 +156,7 @@ export function configFromPreset(p: Preset, meta: Meta): AnalysisConfig {
   return {
     region: p.region, params, constraints: { ...EMPTY_CONSTRAINTS, ...p.constraints },
     constraint_mode: 'exclude', missing_mode: 'partial', min_confidence: 0, top_n: 10,
-    min_separation_km: 250, preset_name: p.name,
+    min_separation_km: 250, preset_name: p.name, season_months: null,
   };
 }
 

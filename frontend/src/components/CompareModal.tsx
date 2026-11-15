@@ -5,11 +5,13 @@ import type { LocationDetail, TopLocation } from '../lib/api';
 import { api } from '../lib/api';
 import { fmtValue, scoreColor } from '../lib/format';
 import { Card, Modal, ScoreRing, Skeleton, Spinner } from './ui';
+import { useT } from '../i18n';
 
 // Validated categorical order (dark): blue, orange, aqua — the all-pairs-safe first three; more items fold to table only.
 const SERIES = ['#3987e5', '#d95926', '#199e70'];
 
 export default function CompareModal({ rid, items, onClose }: { rid: string; items: TopLocation[]; onClose: () => void }) {
+  const t = useT();
   const [details, setDetails] = useState<LocationDetail[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
@@ -23,12 +25,12 @@ export default function CompareModal({ rid, items, onClose }: { rid: string; ite
   });
   const rows = details ? details[0].rows.filter((r) => r.enabled) : [];
   return (
-    <Modal wide title={`Comparison of ${items.length} locations`} onClose={onClose}>
+    <Modal wide title={t('Comparison of {n} locations', { n: items.length })} onClose={onClose}>
       <div className="p-5">
         {err && <div className="text-sm text-red-300">{err}</div>}
         {!details && !err && (
           <div>
-            <div className="mb-4 flex items-center gap-2 text-sm text-mute-400"><Spinner /> Loading…</div>
+            <div className="mb-4 flex items-center gap-2 text-sm text-mute-400"><Spinner /> {t('Loading…')}</div>
             <div className="grid gap-4 lg:grid-cols-[340px_1fr]"><Skeleton className="h-72" /><Skeleton className="h-72" /></div>
           </div>
         )}
@@ -48,7 +50,7 @@ export default function CompareModal({ rid, items, onClose }: { rid: string; ite
               ))}
             </div>
             <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-              <Card title={<>Category scores {details.length > 3 && <span className="font-normal text-mute-400">(first 3 shown)</span>}</>} icon={RadarIcon}>
+              <Card title={<>{t('Category scores')} {details.length > 3 && <span className="font-normal text-mute-400">{t('(first 3 shown)')}</span>}</>} icon={RadarIcon}>
                 <ResponsiveContainer width="100%" height={300}>
                   <RadarChart data={radar} outerRadius={100}>
                     <PolarGrid stroke="#2d384b" />
@@ -62,18 +64,18 @@ export default function CompareModal({ rid, items, onClose }: { rid: string; ite
                   </RadarChart>
                 </ResponsiveContainer>
               </Card>
-              <Card title="Parameter comparison" icon={Table2} className="overflow-hidden">
+              <Card title={t('Parameter comparison')} icon={Table2} className="overflow-hidden">
                 <div className="-m-4 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-ink-925">
                       <tr className="border-b border-ink-600 text-left text-2xs uppercase tracking-wider text-mute-400">
-                        <th className="px-3 py-2.5">Parameter</th><th className="px-3">Target</th>
+                        <th className="px-3 py-2.5">{t('Parameter')}</th><th className="px-3">{t('Target')}</th>
                         {details.map((d, i) => <th key={i} className="px-3 normal-case tracking-normal"><span className="text-white">{d.name}</span><br /><span className="text-mute-400">{d.country}</span></th>)}
                       </tr>
                     </thead>
                     <tbody>
                       <tr className="border-b border-ink-700 bg-ink-850/60">
-                        <td className="px-3 py-2 font-semibold text-white">Overall score</td><td />
+                        <td className="px-3 py-2 font-semibold text-white">{t('Overall score')}</td><td />
                         {details.map((d, i) => <td key={i} className="px-3 font-mono text-sm" style={{ color: scoreColor(d.score) }}>{d.score?.toFixed(1) ?? '—'} <span className="text-2xs text-mute-400">conf {d.confidence?.toFixed(0)}%</span></td>)}
                       </tr>
                       {rows.map((r) => (
