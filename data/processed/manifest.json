@@ -1,0 +1,18 @@
+{
+ "grid": {
+  "resolution_deg": 0.25,
+  "nlat": 720,
+  "nlon": 1440,
+  "origin": "north-west, row 0 = 90N"
+ },
+ "built_utc": "2026-11-15T08:17:39Z",
+ "files": [
+  "dem_terrarium_z6_025deg.npz",
+  "landcover_worldcover2021_025deg.npz",
+  "power_merra2_climatology.npz",
+  "power_meta.json",
+  "power_syn1deg_climatology.npz",
+  "vector_labels.json",
+  "vector_naturalearth_025deg.npz"
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "merra2": {
+  "title": "POWER Universal Time Coordinated (UTC) Time Series",
+  "version": "POWER Version 10.0.0",
+  "time_coverage_start": "2001-01-01T00:00:00",
+  "time_coverage_end": "2020-12-31T23:00:00",
+  "institution": "NASA Langley Research Center (LaRC)",
+  "units": {
+   "T2M": "C",
+   "T2M_MAX_AVG": "C",
+   "T2M_MIN_AVG": "C",
+   "PRECTOTCORR": "mm/day",
+   "WS10M": "m/s",
+   "TS_RANGE": "C",
+   "T2M_MAX": "C",
+   "T2M_MIN": "C",
+   "T2M_RANGE": "C",
+   "TS": "C",
+   "TS_MAX": "C",
+   "TS_MIN": "C",
+   "QV2M": "g/kg",
+   "RH2M": "%",
+   "GWETTOP": "1",
+   "PS": "hPa",
+   "FRSNO": "1",
+   "WS10M_MAX": "m/s"
+  },
+  "url": "s3://nasa-power/merra2/spatial/power_merra2_climatology_spatial_utc.zarr"
+ },
+ "syn1deg": {
+  "title": "POWER Universal Time Coordinated (UTC) Time Series",
+  "version": "POWER Version 10.0.0",
+  "time_coverage_start": "2001-01-01T00:00:00",
+  "time_coverage_end": "2020-12-31T23:00:00",
+  "institution": "NASA Langley Research Center (LaRC)",
+  "units": {
+   "ALLSKY_SFC_SW_DWN": "W m-2",
+   "TOA_SW_DWN": "W m-2",
+   "DAY_HOURS": "Hours",
+   "ALLSKY_KT": "dimensionless",
+   "CLRSKY_SFC_SW_DWN": "W m-2",
+   "AOD_55_ADJ": "dimensionless",
+   "ALLSKY_SFC_UV_INDEX": "W m-2 x 40",
+   "CLOUD_AMT": "%"
+  },
+  "url": "s3://nasa-power/syn1deg/spatial/power_syn1deg_climatology_spatial_utc.zarr"
+ }
+}

@@ -1,0 +1,53 @@
+# Deploys TerraNova to a Hugging Face Space (Docker SDK) on every push to main.
+# Setup (once): repository Settings → Secrets and variables → Actions
+#   secret   HF_TOKEN  – Hugging Face access token with "write" permission
+#   variable HF_SPACE  – Space id, e.g. "your-username/terranova" (created automatically if missing)
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check configuration
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_SPACE" ]; then
+            echo "::error::Set the HF_TOKEN secret and the HF_SPACE variable (see the comment at the top of this workflow)."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upload to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          pip install --quiet "huggingface_hub>=0.24"
+          # The Space needs its own README (front matter tells Hugging Face to build the Dockerfile).
+          cp deploy/huggingface/README.md README.md
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space = os.environ["HF_SPACE"]
+          api.create_repo(space, repo_type="space", space_sdk="docker", exist_ok=True)
+          # upload_folder stores large files (the data grids) with Git LFS automatically.
+          api.upload_folder(
+              repo_id=space, repo_type="space", folder_path=".",
+              ignore_patterns=[".git/*", ".github/*", "docs/*", "data/cache/*", "**/node_modules/*", "frontend/dist/*", "*.tsbuildinfo"],
+              commit_message=f"Deploy {os.environ.get('GITHUB_SHA', '')[:7]}",
+          )
+          print(f"Deployed: https://huggingface.co/spaces/{space}")
+          PY
