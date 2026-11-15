@@ -156,7 +156,26 @@ Sources: LRO Diviner and LOLA, LOLA illumination studies, Diviner rock abundance
 * Results and saved configurations are kept in memory and in browser `localStorage`; there is no PostGIS persistence.
 * The live NASA POWER and SoilGrids lookups need outbound internet. If they are unreachable, the UI says so and falls back gracefully.
 
-## 7. Configuration / API keys
+## 7. Deployment (Hugging Face Spaces)
+
+GitHub Pages cannot host TerraNova because the scoring runs in a Python backend. The repository
+contains a `Dockerfile` (frontend build + FastAPI runtime, port 7860) and a GitHub Actions workflow,
+`.github/workflows/deploy-hf.yml`, that publishes the app to a Hugging Face Space on every push to `main`.
+
+One-time setup:
+1. Create a Hugging Face account and an access token with **write** permission (huggingface.co → Settings → Access Tokens).
+2. In this GitHub repository: Settings → Secrets and variables → Actions:
+   * add the **secret** `HF_TOKEN` with the token;
+   * add the **variable** `HF_SPACE`, e.g. `your-username/terranova`. The Space is created automatically if it does not exist.
+3. Push to `main` (or run the workflow manually from the Actions tab). The Space builds the Docker image, which takes a few minutes, and the app appears at `https://huggingface.co/spaces/<HF_SPACE>`.
+
+The same `Dockerfile` works on any container host (Render, Fly.io, Cloud Run):
+
+```bash
+docker build -t terranova . && docker run -p 7860:7860 terranova
+```
+
+## 8. Configuration / API keys
 
 No API keys are required.
 
@@ -168,7 +187,7 @@ No API keys are required.
 | `TERRANOVA_HTTP_TIMEOUT` | backend | Timeout for live connectors (s, default 12). |
 | `PORT` | `run.sh` | Server port (default 8000). |
 
-## 8. Architecture
+## 9. Architecture
 
 ```
 backend/
